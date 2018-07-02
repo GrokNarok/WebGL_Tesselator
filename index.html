@@ -247,6 +247,8 @@
 	RenderableObject.prototype.draw = function () {
         mvPushMatrix();		
 		
+        mat4.translate(mvMatrix, this.position);
+		
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
         gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
@@ -457,27 +459,55 @@
 		calculateNormals(rendObj, vertices, vertexIndices);
 	}
 	
+	// Gentrions that generates hex grid positions
+	// size			size of the grid in hexes (0 - 1 hex, 1 - 7 hexes, 2 - 19 hexes etc.)
+	// gridScale	distance between centers on the tiles
+	function generateHexGrid(size, gridScale){
+		var tilePositions = [];
+		var i, j;
+		for(i = 0; i <= (size-1); i++) {
+			var x = (Math.sqrt(3) * i * gridScale) / 2.0;
+			for (j = 0; j < (2*size - 1 - i); j++) {
+				var y = ((-(2*size - i - 2) * gridScale) / 2.0) + (j * gridScale);
+	
+				tilePositions.push([x, y, 0.0]);
+				if (x != 0) {
+					tilePositions.push([-x, y, 0.0]);
+				}
+			}
+
+		}
+		return tilePositions;
+	}
 	
 	var renderableObjects = [];
 	
 	function initObjects() {
-		var hexTile = new RenderableObject();
-		makeHex(hexTile);
+		var gridScale = 2.1;
+		var tilePositions = generateHexGrid(30, gridScale);
 		
-		renderableObjects.push(hexTile);
+		// Scale the grid	
+//		tilePositions = tilePositions.map(function(x) {return x.map(function(x) {return x * gridScale})});
+	
+		for (var i in tilePositions) {
+			var hexTile = new RenderableObject();
+			makeHex(hexTile);
+			hexTile.position = tilePositions[i];
+			renderableObjects.push(hexTile);
+		}
 	}
 	
 	function drawScene() {
         gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
-        mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+        mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 1000.0, pMatrix);
 
         mat4.identity(mvMatrix);
 
         mvPushMatrix();
 		
-        mat4.translate(mvMatrix, [0.0, 0.0, -10.0]);
+        mat4.translate(mvMatrix, [0.0, 0.0, -80.0]);
         mat4.multiply(mvMatrix, cameraRotationMatrix);
 
         gl.uniform3f(shaderProgram.pointLightingLocationUniform, -1, 2, -1);
@@ -527,6 +557,8 @@
 
 <body onload="webGLStart();">
     <canvas id="tesselator" style="border: none;" width="800" height="800"></canvas>
+	<br>
+	Rotate the camera by dragging it with the mouse. 
 </body>
 
 </html>
