@@ -1,7 +1,7 @@
 <html>
 
 <head>
-<title>Tesselator</title>
+<title>Tessellator</title>
 <meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
 
 <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
@@ -161,7 +161,7 @@
         shaderProgram.pointLightingDiffuseColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingDiffuseColor");
     }
 
-    // Maxtrix helper code
+    // Matrix helper code
     var mvMatrix = mat4.create();
     var mvMatrixStack = [];
     var pMatrix = mat4.create();
@@ -188,7 +188,7 @@
         mat3.transpose(normalMatrix);
         gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
     }
-    // End maxtrix helper code
+    // End matrix helper code
 
     // Code that handles camera rotation via mouse drag.
     var mouseDown = false;
@@ -236,16 +236,28 @@
         this.vertexNormalBuffer = gl.createBuffer();
         this.vertexIndexBuffer = gl.createBuffer();
         
+        this.colour = [1.0, 1.0, 1.0];
         this.position = [0.0, 0.0, 0.0];
 //      this.rotation = [0.0, 0.0, 0.0];
 //      this.scale = 1.0;
+        
+        this.show = false;
     }
 
     // Draw function
     RenderableObject.prototype.draw = function () {
+        if (!this.show) {
+            return;
+        }
+        
         mvPushMatrix();
         
         mat4.translate(mvMatrix, this.position);
+        
+        gl.uniform3f(shaderProgram.materialAmbientColorUniform, this.colour[0], this.colour[1], this.colour[2]);
+        gl.uniform3f(shaderProgram.materialDiffuseColorUniform, this.colour[0], this.colour[1], this.colour[2]);
+        gl.uniform3f(shaderProgram.materialSpecularColorUniform, this.colour[0], this.colour[1], this.colour[2]);
+        gl.uniform1f(shaderProgram.materialShininessUniform, 5);
         
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
         gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, this.vertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
@@ -259,9 +271,9 @@
         
         mvPopMatrix();
     };
+    
 
-
-    // Calculates perpendicular vertex normals from geometry defenition, triangle vertices need to be defines in clockwise order.
+    // Calculates perpendicular vertex normals from geometry definition, triangle vertices need to be defines in clockwise order.
     function calculateNormals(rendObj, vertices, vertexIndices)
     {
         rendObj.vertexNormalBuffer = gl.createBuffer();
@@ -282,7 +294,7 @@
             var p2y = vertices[c*3 + 1];
             var p2z = vertices[c*3 + 2];
             
-            // get 2 vectors from verteces
+            // get 2 vectors from vertices
             var ux = p1x - p0x;
             var uy = p1y - p0y;
             var uz = p1z - p0z;
@@ -307,7 +319,7 @@
         rendObj.vertexNormalBuffer.numItems = rendObj.vertexPositionBuffer.numItems;
     }
 
-    // Loads geometry for a hex tile into an odject
+    // Loads geometry for a hex tile into an object
     function makeHex(rendObj) {
         var magicFactor = 1.15;
         var tileThickness = 0.1;
@@ -457,7 +469,7 @@
         calculateNormals(rendObj, vertices, vertexIndices);
     }
 
-    // Gentrions that generates hex grid positions
+    // Generates hex grid positions
     // size         size of the grid in hexes (0 - 1 hex, 1 - 7 hexes, 2 - 19 hexes etc.)
     // gridScale    distance between centers on the tiles
     function generateHexGrid(size, gridScale){
@@ -510,11 +522,6 @@
         gl.uniform3f(shaderProgram.pointLightingDiffuseColorUniform, 0.8, 0.8, 0.8);
         gl.uniform3f(shaderProgram.pointLightingSpecularColorUniform, 0.8, 0.8, 0.8);
         
-        gl.uniform3f(shaderProgram.materialAmbientColorUniform, 1.0, 1.0, 1.0);
-        gl.uniform3f(shaderProgram.materialDiffuseColorUniform, 1.0, 1.0, 1.0);
-        gl.uniform3f(shaderProgram.materialSpecularColorUniform, 1.5, 1.5, 1.5);
-        gl.uniform1f(shaderProgram.materialShininessUniform, 5);
-        
         for (var i in renderableObjects) {
             renderableObjects[i].draw();
         }
@@ -522,13 +529,43 @@
         mvPopMatrix();
     }
 
+    // Defines a radius around (0,0,0) within which tiles will be shown.
+    var showTilesRadius = 0;
+    var showTilesSpeed = 3.0; // per second
+
+    // This function updates time-based things (like animations)
+    var lastTime = 0;
+    function frameMove() {
+        var currentTime = new Date().getTime();
+        if (lastTime == 0) {
+            lastTime = currentTime;
+            return;
+        }
+        
+        var elapsedTime = currentTime - lastTime;
+        lastTime = currentTime;
+        
+        // Tiles start hidden, this code with start displaying them in a growing circle.
+        showTilesRadius += (showTilesSpeed * elapsedTime) / 1000;
+        for (var i in renderableObjects) {
+            if (renderableObjects[i].show == false) {
+                var position = renderableObjects[i].position;
+                // If position is within the sphere.
+                if (Math.pow(position[0], 2) + Math.pow(position[1], 2) + Math.pow(position[2], 2) < Math.pow(showTilesRadius, 2)) {
+                    renderableObjects[i].show = true;
+                }
+            }
+        }
+    }
+
     function tick() {
         requestAnimFrame(tick);
+        frameMove();
         drawScene();
     }
 
     function webGLStart() {
-        var canvas = document.getElementById("tesselator");
+        var canvas = document.getElementById("tessellator");
         initGL(canvas);
         initShaders();
         initObjects();
@@ -540,6 +577,7 @@
         document.onmouseup = handleMouseUp;
         document.onmousemove = handleMouseMove;
         
+        lastTime = 0;
         tick();
     }
 
@@ -550,7 +588,7 @@
 
 
 <body onload="webGLStart();">
-    <canvas id="tesselator" style="border: none;" width="800" height="800"></canvas>
+    <canvas id="tessellator" style="border: none;" width="800" height="800"></canvas>
     <br>
     Rotate the camera by dragging it with the mouse. 
 </body>
