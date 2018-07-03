@@ -243,7 +243,7 @@
         
         this.show = false;
     }
-
+    
     // Draw function
     RenderableObject.prototype.draw = function () {
         if (!this.show) {
@@ -271,7 +271,52 @@
         
         mvPopMatrix();
     };
+
+
+    // An object that interpolates a value over time and sets it via a provided function.
+    // setterCallback   The function that will be called with interpolated value as parameter.
+    // startValue       Value to be set at the start of the timeline
+    // endValue         Value to be set at the end of the timeline
+    // duration         Amount of time (in milliseconds) in will take to go from startValue to endValue
+    function InterpolationTimeline(setterCallback, startValue, endValue, duration) {
+        if (duration == 0) {
+            duration = 1; // hacky but we don't want to divide by zero
+        }
+        
+        this.setterCallback = setterCallback;
+        this.startValue = startValue;
+        this.endValue = endValue;
+        this.duration = duration;
+        
+        this.elapsedTime = 0;
+        this.active = false;
+    }
     
+    InterpolationTimeline.prototype.frameMove = function (deltaTime) {
+        if (this.active == false) {
+            return;
+        }
+        
+        if (!Array.isArray(this.startValue) && !Array.isArray(this.endValue)) {
+            this.setterCallback((this.startValue * (1 - (this.elapsedTime / this.duration))) + (this.endValue * (this.elapsedTime / this.duration)));
+        } else if (Array.isArray(this.startValue) && Array.isArray(this.endValue) && this.startValue.length == this.endValue.length) {
+            var finalValue = [];
+            var i;
+            for(i = 0; i < this.startValue.length; i++) {
+                finalValue[i] = (this.startValue[i] * (1 - (this.elapsedTime / this.duration))) + (this.endValue[i] * (this.elapsedTime / this.duration));
+            }
+            this.setterCallback(finalValue);
+        }
+        
+        if (this.elapsedTime >= this.duration) {
+            this.active = false;
+        }
+        this.elapsedTime += deltaTime;
+        if (this.elapsedTime > this.duration) {
+            this.elapsedTime = this.duration;
+        }
+    }
+
 
     // Calculates perpendicular vertex normals from geometry definition, triangle vertices need to be defines in clockwise order.
     function calculateNormals(rendObj, vertices, vertexIndices)
@@ -490,6 +535,7 @@
     }
 
     var renderableObjects = [];
+    var timelines = [];
 
     function initObjects() {
         var gridScale = 2.1;
@@ -531,7 +577,7 @@
 
     // Defines a radius around (0,0,0) within which tiles will be shown.
     var showTilesRadius = 0;
-    var showTilesSpeed = 3.0; // per second
+    var showTilesSpeed = 2.0; // per second
 
     // This function updates time-based things (like animations)
     var lastTime = 0;
@@ -553,8 +599,16 @@
                 // If position is within the sphere.
                 if (Math.pow(position[0], 2) + Math.pow(position[1], 2) + Math.pow(position[2], 2) < Math.pow(showTilesRadius, 2)) {
                     renderableObjects[i].show = true;
+                    
+                    timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 3000));
+                    timelines[timelines.length-1].active = true;
                 }
             }
+        }
+        
+        // Update timelines
+        for (var i in timelines) {
+            timelines[i].frameMove(elapsedTime);
         }
     }
 
