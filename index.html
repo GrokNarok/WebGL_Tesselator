@@ -238,7 +238,9 @@
         
         this.colour = [1.0, 1.0, 1.0];
         this.position = [0.0, 0.0, 0.0];
-//      this.rotation = [0.0, 0.0, 0.0];
+        this.rotationAngle = 0.0; // In radians
+        this.rotationAxis = [0.0, 0.0, 0.0];
+        this.rotationPoint = [0.0, 0.0, 0.0]; // Point around which the object will be rotated, the point is relative to the position of the object.
 //      this.scale = 1.0;
         
         this.show = false;
@@ -253,6 +255,11 @@
         mvPushMatrix();
         
         mat4.translate(mvMatrix, this.position);
+        
+        var opposite = this.rotationPoint.map(x => x*(-1.0));
+        mat4.translate(mvMatrix, opposite);
+        mat4.rotate(mvMatrix, this.rotationAngle, this.rotationAxis);
+        mat4.translate(mvMatrix, this.rotationPoint);
         
         gl.uniform3f(shaderProgram.materialAmbientColorUniform, this.colour[0], this.colour[1], this.colour[2]);
         gl.uniform3f(shaderProgram.materialDiffuseColorUniform, this.colour[0], this.colour[1], this.colour[2]);
@@ -591,6 +598,22 @@
         var elapsedTime = currentTime - lastTime;
         lastTime = currentTime;
         
+        // TODO: move to an input handling function or something
+        var useCenterAnim = false;
+        var radios = document.getElementsByName('animationStyle');
+        for (var i = 0, length = radios.length; i < length; i++)
+        {
+            if (radios[i].checked)
+            {
+                if(radios[i].value == "center") {
+                    useCenterAnim = true;
+                } else {
+                    useCenterAnim = false;
+                }
+                break;
+            }
+        }
+        
         // Tiles start hidden, this code with start displaying them in a growing circle.
         showTilesRadius += (showTilesSpeed * elapsedTime) / 1000;
         for (var i in renderableObjects) {
@@ -600,7 +623,19 @@
                 if (Math.pow(position[0], 2) + Math.pow(position[1], 2) + Math.pow(position[2], 2) < Math.pow(showTilesRadius, 2)) {
                     renderableObjects[i].show = true;
                     
+                    // Setup a timeline that will gradually shift the tile from black to white.
                     timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 3000));
+                    timelines[timelines.length-1].active = true;
+                    
+                    // Setup a timeline that will move tiles into place (by rotating them around a point behind them).
+                    if (useCenterAnim == true) {
+                        renderableObjects[i].rotationPoint = [renderableObjects[i].position[0]*0.5, renderableObjects[i].position[1]*0.5, 10];
+                    } else {
+                        renderableObjects[i].rotationPoint = [0, 0, 10];
+                    }
+                    // If you treat the position as a vector we want the rotation axis to be perpendicular to it in the plate of the mosaic.
+                    renderableObjects[i].rotationAxis = [renderableObjects[i].position[1]*-1, renderableObjects[i].position[0], 0];
+                    timelines.push(new InterpolationTimeline(function (value) {this.rotationAngle = value}.bind(renderableObjects[i]), Math.PI, 0.0, 3000));
                     timelines[timelines.length-1].active = true;
                 }
             }
@@ -644,7 +679,13 @@
 <body onload="webGLStart();">
     <canvas id="tessellator" style="border: none;" width="800" height="800"></canvas>
     <br>
-    Rotate the camera by dragging it with the mouse. 
+    Rotate the camera by dragging it with the mouse.
+    <br>
+    <form>
+        Choose animation style:<br>
+        <input type="radio" name="animationStyle" value="center" checked>Tiles start from the center.<br>
+        <input type="radio" name="animationStyle" value="edge">Tiles start from the edge.<br>
+    </form>
 </body>
 
 </html>
