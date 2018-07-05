@@ -233,6 +233,18 @@
     }
     // End camera rotation code
 
+    // Enums
+    var GRID_TYPES = {
+        HEX     : 1,
+        PENROSE : 2,
+    };
+    
+    var TILE_TYPES = {
+        HEX           : 1,
+        PENROSE_THIN  : 2,
+        PENROSE_THICK : 3,
+    };
+
     // Globals
     var renderableObjects = [];
     var timelines = [];
@@ -240,9 +252,10 @@
     
     var showTilesSpeed = 2.0; // per second
     
+    var gridType = GRID_TYPES.HEX;
     var cameraDistance = -80.0;
     var gridSize = 30;
-    var gridScale = 2.1;
+    var gridScale = 1.05;
     var tileColour = [1.0, 1.0, 1.0];
     var animDuration = 3.0;
     var useCenterAnim = false;
@@ -255,6 +268,20 @@
 
     // Pulls the values from the html form and updates globals accordingly, this one is called on reset.
     function handleUserInputOnReset() {
+        var radios = document.getElementsByName('gridType');
+        for (var i = 0, length = radios.length; i < length; i++)
+        {
+            if (radios[i].checked)
+            {
+                if(radios[i].value == "hex") {
+                    gridType = GRID_TYPES.HEX;
+                } else if(radios[i].value == "penrose") {
+                    gridType = GRID_TYPES.PENROSE;
+                }
+                break;
+            }
+        }
+        
         cameraDistance = parseFloat(document.getElementById("cameraDistance").value);
         
         gridSize = parseInt(document.getElementById("gridSize").value);
@@ -269,7 +296,7 @@
         
         animDuration = parseFloat(document.getElementById("animDuration").value);
         
-        var radios = document.getElementsByName('animationStyle');
+        radios = document.getElementsByName('animationStyle');
         for (var i = 0, length = radios.length; i < length; i++)
         {
             if (radios[i].checked)
@@ -298,6 +325,9 @@
         this.vertexNormalBuffer = gl.createBuffer();
         this.vertexIndexBuffer = gl.createBuffer();
         
+        // TODO: This kinda breaks the whole "generic renderable object" thing, oh well maybe fix later.
+        this.tileOrientation = 0.0; // Counter-clockwise rotation around z axis through the center of the object.
+        
         this.colour = [1.0, 1.0, 1.0];
         this.position = [0.0, 0.0, 0.0];
         this.rotationAngle = 0.0; // In radians
@@ -322,6 +352,8 @@
         mat4.translate(mvMatrix, opposite);
         mat4.rotate(mvMatrix, this.rotationAngle, this.rotationAxis);
         mat4.translate(mvMatrix, this.rotationPoint);
+        
+        mat4.rotateZ(mvMatrix, this.tileOrientation);
         
         gl.uniform3f(shaderProgram.materialAmbientColorUniform, this.colour[0], this.colour[1], this.colour[2]);
         gl.uniform3f(shaderProgram.materialDiffuseColorUniform, this.colour[0], this.colour[1], this.colour[2]);
@@ -387,7 +419,8 @@
     }
 
 
-    // Calculates perpendicular vertex normals from geometry definition, triangle vertices need to be defines in clockwise order.
+    // Calculates perpendicular vertex normals from geometry definition, triangle vertices need to be
+    // defines in counter-clockwise order from the direction into which normal will point.
     function calculateNormals(rendObj, vertices, vertexIndices)
     {
         rendObj.vertexNormalBuffer = gl.createBuffer();
@@ -433,11 +466,10 @@
         rendObj.vertexNormalBuffer.numItems = rendObj.vertexPositionBuffer.numItems;
     }
 
+    var magicFactor = 1.15; // The factor by which the middle of the tile is bigger then the faces.
+    var tileThickness = 0.1;
     // Loads geometry for a hex tile into an object
-    function makeHex(rendObj) {
-        var magicFactor = 1.15;
-        var tileThickness = 0.1;
-        
+    function makeHex(rendObj) {        
         gl.bindBuffer(gl.ARRAY_BUFFER, rendObj.vertexPositionBuffer);
         vertices = [
             //front face
@@ -583,6 +615,126 @@
         calculateNormals(rendObj, vertices, vertexIndices);
     }
 
+    // Loads geometry for a rhomb tile of specified width and height into an object
+    function makeRhomdTile(rendObj, width, heigth) {
+        var halfWidth = width / 2;
+        var halfHeigth = heigth / 2;
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, rendObj.vertexPositionBuffer);
+        vertices = [
+            //front face
+             0.0,           halfHeigth,     tileThickness,
+             halfWidth,     0.0,            tileThickness,
+             -halfWidth,    0.0,            tileThickness,
+             0.0,           -halfHeigth,    tileThickness,
+            
+            //back face
+             0.0,           halfHeigth,     -tileThickness,
+             halfWidth,     0.0,            -tileThickness,
+             -halfWidth,    0.0,            -tileThickness,
+             0.0,           -halfHeigth,    -tileThickness,
+            
+            //front side 1 face
+             0.0,                   halfHeigth,                 tileThickness,
+             halfWidth,             0.0,                        tileThickness,
+             0.0*magicFactor,       halfHeigth*magicFactor,     0.0,
+             halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+            
+            //front side 2 face
+             halfWidth,             0.0,                        tileThickness,
+             0.0,                   -halfHeigth,                tileThickness,
+             halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+             0.0*magicFactor,       -halfHeigth*magicFactor,    0.0,
+            
+            //front side 3 face
+             0.0,                   -halfHeigth,                tileThickness,
+            -halfWidth,             0.0,                        tileThickness,
+             0.0*magicFactor,       -halfHeigth*magicFactor,    0.0,
+            -halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+            
+            //front side 4 face
+            -halfWidth,             0.0,                        tileThickness,
+             0.0,                   halfHeigth,                 tileThickness,
+            -halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+             0.0*magicFactor,       halfHeigth*magicFactor,     0.0,
+            
+            //back side 1 face
+             0.0,                   halfHeigth,                 -tileThickness,
+             halfWidth,             0.0,                        -tileThickness,
+             0.0*magicFactor,       halfHeigth*magicFactor,     0.0,
+             halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+            
+            //back side 2 face
+             halfWidth,             0.0,                        -tileThickness,
+             0.0,                   -halfHeigth,                -tileThickness,
+             halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+             0.0*magicFactor,       -halfHeigth*magicFactor,    0.0,
+            
+            //back side 3 face
+             0.0,                   -halfHeigth,                -tileThickness,
+            -halfWidth,             0.0,                        -tileThickness,
+             0.0*magicFactor,       -halfHeigth*magicFactor,    0.0,
+            -halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+            
+            //back side 4 face
+            -halfWidth,             0.0,                        -tileThickness,
+             0.0,                   halfHeigth,                 -tileThickness,
+            -halfWidth*magicFactor, 0.0*magicFactor,            0.0,
+             0.0*magicFactor,       halfHeigth*magicFactor,     0.0,
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        rendObj.vertexPositionBuffer.itemSize = 3;
+        rendObj.vertexPositionBuffer.numItems = 40;
+        
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, rendObj.vertexIndexBuffer);
+        var vertexIndices = [
+              // Front face
+              0, 2, 1,      1, 2, 3,
+              
+              // Back face
+              4, 5, 6,      5, 7, 6,
+                
+              //front side 1 face
+              8, 9,10,     10, 9,11,
+            
+              //front side 2 face
+             12,13,14,     14,13,15,
+            
+              //front side 3 face
+             16,17,18,     18,17,19,
+            
+              //front side 4 face
+             20,21,22,     22,21,23,
+            
+              //back side 1 face
+             24,26,25,     26,27,25,
+            
+              //back side 2 face
+             28,30,29,     30,31,29,
+            
+              //back side 3 face
+             32,34,33,     34,35,33,
+            
+              //back side 4 face
+             36,38,37,     38,39,37,
+        ];
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(vertexIndices), gl.STATIC_DRAW);
+        rendObj.vertexIndexBuffer.itemSize = 1;
+        rendObj.vertexIndexBuffer.numItems = 60;
+        
+        calculateNormals(rendObj, vertices, vertexIndices);
+    }
+    
+    // Loads geometry for a Penrose P3 thin rhomb tile into an object
+    function makePenroseThinRhomd(rendObj) {
+        makeRhomdTile(rendObj, 0.650, 2.0);
+    }
+    
+    // Loads geometry for a Penrose P3 thick rhomb tile into an object
+    function makePenroseThickRhomd(rendObj) {
+        makeRhomdTile(rendObj, 1.236, 1.7);
+    }
+
     // Generates hex grid positions
     // size         size of the grid in hexes (0 - 1 hex, 1 - 7 hexes, 2 - 19 hexes etc.)
     // gridScale    distance between centers on the tiles
@@ -590,9 +742,9 @@
         var tilePositions = [];
         var i, j;
         for(i = 0; i <= (size-1); i++) {
-            var x = (Math.sqrt(3) * i * gridScale) / 2.0;
+            var x = Math.sqrt(3) * i * gridScale;
             for (j = 0; j < (2*size - 1 - i); j++) {
-                var y = ((-(2*size - i - 2) * gridScale) / 2.0) + (j * gridScale);
+                var y = (-(2*size - i - 2) * gridScale) + (j * 2 * gridScale);
                 
                 tilePositions.push([x, y, 0.0]);
                 if (x != 0) {
@@ -603,14 +755,55 @@
         return tilePositions;
     }
 
+    // Generates Penrose grid specifications (tile type, position, orientation)
+    // gridScale    distance between centers on the tiles
+    function TileSpecs(type, position, orientation) {
+        this.type = type;
+        this.position = position;
+        this.orientation = orientation;
+    }
+    function generatePenroseGrid(gridScale){
+        //TODO: actually generate positions (aka the easy part)
+        var tileSpecsList = [
+            new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*0,      gridScale*1,      0], 0),
+            new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*0.951,  gridScale*0.309,  0], 5.026548),
+            new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*0.588,  gridScale*-0.809, 0], 3.769911),
+            new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*-0.588, gridScale*-0.809, 0], 2.513274),
+            new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*-0.951, gridScale*0.309,  0], 1.256637),
+            
+            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0.95176,  gridScale*1.30941,  0], 5.6548665 + 1.570796),
+            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*1.54000,  gridScale*-0.50000, 0], 4.3982295 + 1.570796),
+            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0,        gridScale*-1.61882, 0], 3.1415925 + 1.570796),
+            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-1.54000, gridScale*-0.50000, 0], 1.8849555 + 1.570796),
+            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-0.95176, gridScale*1.30941,  0], 0.6283185 + 1.570796),
+        ];
+        return tileSpecsList;
+    }
+
     function initObjects() {
-        var tilePositions = generateHexGrid(gridSize, gridScale);
-        
-        for (var i in tilePositions) {
-            var hexTile = new RenderableObject();
-            makeHex(hexTile);
-            hexTile.position = tilePositions[i];
-            renderableObjects.push(hexTile);
+        if (gridType == GRID_TYPES.HEX)
+        {
+            var tilePositions = generateHexGrid(gridSize, gridScale);
+            for (var i in tilePositions) {
+                var tile = new RenderableObject();
+                makeHex(tile);
+                tile.position = tilePositions[i];
+                renderableObjects.push(tile);
+            }
+        }
+        else if (gridType == GRID_TYPES.PENROSE) {
+            var tileSpecs = generatePenroseGrid(gridScale);
+            for (var i in tileSpecs) {
+                var tile = new RenderableObject();
+                if (tileSpecs[i].type == TILE_TYPES.PENROSE_THIN) {
+                    makePenroseThinRhomd(tile);
+                } else if (tileSpecs[i].type == TILE_TYPES.PENROSE_THICK) {
+                    makePenroseThickRhomd(tile);
+                }
+                tile.position = tileSpecs[i].position;
+                tile.tileOrientation = tileSpecs[i].orientation;
+                renderableObjects.push(tile);
+            }
         }
     }
 
@@ -733,6 +926,10 @@
       </td>
       <td>
         <form>
+          Choose grid type:
+          <input type="radio" name="gridType" value="hex" checked>Hexagonal
+          <input type="radio" name="gridType" value="penrose">Penrose<br>
+          
           Camera distance:
           <input type="text" id="cameraDistance" value="-80.0" size="5"><br>
           
@@ -740,7 +937,7 @@
           <input type="text" id="gridSize" value="30" size="4"><br>
           
           Distance between tiles:
-          <input type="text" id="gridScale" value="2.1" size="4"><br>
+          <input type="text" id="gridScale" value="1.05" size="4"><br>
           
           Grid expansion rate (per sec):
           <input type="text" id="gridExpansionRate" value="2.0" size="4"><br>
@@ -754,8 +951,8 @@
           <input type="text" id="animDuration" value="3.0" size="4"><br>
           
           Choose animation style:<br>
-          <input type="radio" name="animationStyle" value="center" checked>Tiles start from the center.<br>
-          <input type="radio" name="animationStyle" value="edge">Tiles start from the edge.<br>
+          <input type="radio" name="animationStyle" value="center" checked>Tiles start from the center<br>
+          <input type="radio" name="animationStyle" value="edge">Tiles start from the edge<br>
           <input type="radio" name="animationStyle" value="custom">Specify rotation point (relative to the tile)
           <input type="text" id="animationStyleCustomX" value="0.0" size="5">
           <input type="text" id="animationStyleCustomY" value="0.0" size="5">
