@@ -81,6 +81,9 @@
             gl = canvas.getContext("webgl");
             gl.viewportWidth = canvas.width;
             gl.viewportHeight = canvas.height;
+            
+            gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            gl.enable(gl.DEPTH_TEST);
         } catch (e) {
         }
         if (!gl) {
@@ -229,6 +232,65 @@
         lastMouseY = newY;
     }
     // End camera rotation code
+
+    // Globals
+    var renderableObjects = [];
+    var timelines = [];
+    var showTilesRadius = 0; // Defines a radius around (0,0,0) within which tiles will be shown.
+    
+    var showTilesSpeed = 2.0; // per second
+    
+    var cameraDistance = -80.0;
+    var gridSize = 30;
+    var gridScale = 2.1;
+    var tileColour = [1.0, 1.0, 1.0];
+    var animDuration = 3.0;
+    var useCenterAnim = false;
+    var customRotationPoint = [0.0, 0.0, 0.0];
+
+    // Pulls the values from the html form and updates globals accordingly, this one is called every frame.
+    function handleUserInputDynamic() {
+        showTilesSpeed = parseFloat(document.getElementById("gridExpansionRate").value);
+    }
+
+    // Pulls the values from the html form and updates globals accordingly, this one is called on reset.
+    function handleUserInputOnReset() {
+        cameraDistance = parseFloat(document.getElementById("cameraDistance").value);
+        
+        gridSize = parseInt(document.getElementById("gridSize").value);
+        
+        gridScale = parseFloat(document.getElementById("gridScale").value);
+        
+        tileColour = [
+            parseFloat(document.getElementById("tileColourR").value),
+            parseFloat(document.getElementById("tileColourG").value),
+            parseFloat(document.getElementById("tileColourB").value)
+        ];
+        
+        animDuration = parseFloat(document.getElementById("animDuration").value);
+        
+        var radios = document.getElementsByName('animationStyle');
+        for (var i = 0, length = radios.length; i < length; i++)
+        {
+            if (radios[i].checked)
+            {
+                if(radios[i].value == "center") {
+                    useCenterAnim = true;
+                } else if(radios[i].value == "edge") {
+                    useCenterAnim = false;
+                    customRotationPoint = [0.0, 0.0, 10.0];
+                } else if(radios[i].value == "custom") {
+                    useCenterAnim = false;
+                    customRotationPoint = [
+                        parseFloat(document.getElementById("animationStyleCustomX").value),
+                        parseFloat(document.getElementById("animationStyleCustomY").value),
+                        parseFloat(document.getElementById("animationStyleCustomZ").value)
+                    ];
+                }
+                break;
+            }
+        }
+    }
 
     // Basic object in a scene.
     function RenderableObject() {
@@ -541,12 +603,8 @@
         return tilePositions;
     }
 
-    var renderableObjects = [];
-    var timelines = [];
-
     function initObjects() {
-        var gridScale = 2.1;
-        var tilePositions = generateHexGrid(30, gridScale);
+        var tilePositions = generateHexGrid(gridSize, gridScale);
         
         for (var i in tilePositions) {
             var hexTile = new RenderableObject();
@@ -566,7 +624,7 @@
         
         mvPushMatrix();
         
-        mat4.translate(mvMatrix, [0.0, 0.0, -80.0]);
+        mat4.translate(mvMatrix, [0.0, 0.0, cameraDistance]);
         mat4.multiply(mvMatrix, cameraRotationMatrix);
         
         gl.uniform3f(shaderProgram.pointLightingLocationUniform, -1, 2, -1);
@@ -582,10 +640,6 @@
         mvPopMatrix();
     }
 
-    // Defines a radius around (0,0,0) within which tiles will be shown.
-    var showTilesRadius = 0;
-    var showTilesSpeed = 2.0; // per second
-
     // This function updates time-based things (like animations)
     var lastTime = 0;
     function frameMove() {
@@ -598,22 +652,6 @@
         var elapsedTime = currentTime - lastTime;
         lastTime = currentTime;
         
-        // TODO: move to an input handling function or something
-        var useCenterAnim = false;
-        var radios = document.getElementsByName('animationStyle');
-        for (var i = 0, length = radios.length; i < length; i++)
-        {
-            if (radios[i].checked)
-            {
-                if(radios[i].value == "center") {
-                    useCenterAnim = true;
-                } else {
-                    useCenterAnim = false;
-                }
-                break;
-            }
-        }
-        
         // Tiles start hidden, this code with start displaying them in a growing circle.
         showTilesRadius += (showTilesSpeed * elapsedTime) / 1000;
         for (var i in renderableObjects) {
@@ -624,18 +662,18 @@
                     renderableObjects[i].show = true;
                     
                     // Setup a timeline that will gradually shift the tile from black to white.
-                    timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], [1.0, 1.0, 1.0], 3000));
+                    timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], tileColour, animDuration*1000));
                     timelines[timelines.length-1].active = true;
                     
                     // Setup a timeline that will move tiles into place (by rotating them around a point behind them).
                     if (useCenterAnim == true) {
                         renderableObjects[i].rotationPoint = [renderableObjects[i].position[0]*0.5, renderableObjects[i].position[1]*0.5, 10];
                     } else {
-                        renderableObjects[i].rotationPoint = [0, 0, 10];
+                        renderableObjects[i].rotationPoint = customRotationPoint;
                     }
                     // If you treat the position as a vector we want the rotation axis to be perpendicular to it in the plate of the mosaic.
                     renderableObjects[i].rotationAxis = [renderableObjects[i].position[1]*-1, renderableObjects[i].position[0], 0];
-                    timelines.push(new InterpolationTimeline(function (value) {this.rotationAngle = value}.bind(renderableObjects[i]), Math.PI, 0.0, 3000));
+                    timelines.push(new InterpolationTimeline(function (value) {this.rotationAngle = value}.bind(renderableObjects[i]), Math.PI, 0.0, animDuration*1000));
                     timelines[timelines.length-1].active = true;
                 }
             }
@@ -649,22 +687,31 @@
 
     function tick() {
         requestAnimFrame(tick);
+        
+        handleUserInputDynamic();
         frameMove();
         drawScene();
+    }
+
+    function reset() {
+        renderableObjects = [];
+        timelines = [];
+        showTilesRadius = 0;
+        
+        handleUserInputOnReset();
+        
+        initShaders();
+        initObjects();
     }
 
     function webGLStart() {
         var canvas = document.getElementById("tessellator");
         initGL(canvas);
-        initShaders();
-        initObjects();
-        
-        gl.clearColor(0.0, 0.0, 0.0, 1.0);
-        gl.enable(gl.DEPTH_TEST);
-        
         canvas.onmousedown = handleMouseDown;
         document.onmouseup = handleMouseUp;
         document.onmousemove = handleMouseMove;
+        
+        reset();
         
         lastTime = 0;
         tick();
@@ -677,15 +724,47 @@
 
 
 <body onload="webGLStart();">
-    <canvas id="tessellator" style="border: none;" width="800" height="800"></canvas>
-    <br>
-    Rotate the camera by dragging it with the mouse.
-    <br>
-    <form>
-        Choose animation style:<br>
-        <input type="radio" name="animationStyle" value="center" checked>Tiles start from the center.<br>
-        <input type="radio" name="animationStyle" value="edge">Tiles start from the edge.<br>
-    </form>
+  <table>
+    <tr>
+      <td>
+        <canvas id="tessellator" style="border: none;" width="800" height="800"></canvas>
+        <br>
+        Rotate the camera by dragging it with the mouse.
+      </td>
+      <td>
+        <form>
+          Camera distance:
+          <input type="text" id="cameraDistance" value="-80.0" size="5"><br>
+          
+          Grid size:
+          <input type="text" id="gridSize" value="30" size="4"><br>
+          
+          Distance between tiles:
+          <input type="text" id="gridScale" value="2.1" size="4"><br>
+          
+          Grid expansion rate (per sec):
+          <input type="text" id="gridExpansionRate" value="2.0" size="4"><br>
+          
+          Tile colour:
+          <input type="text" id="tileColourR" value="1.0" size="3">
+          <input type="text" id="tileColourG" value="1.0" size="3">
+          <input type="text" id="tileColourB" value="1.0" size="3"> <br>
+          
+          Animation duration (sec):
+          <input type="text" id="animDuration" value="3.0" size="4"><br>
+          
+          Choose animation style:<br>
+          <input type="radio" name="animationStyle" value="center" checked>Tiles start from the center.<br>
+          <input type="radio" name="animationStyle" value="edge">Tiles start from the edge.<br>
+          <input type="radio" name="animationStyle" value="custom">Specify rotation point (relative to the tile)
+          <input type="text" id="animationStyleCustomX" value="0.0" size="5">
+          <input type="text" id="animationStyleCustomY" value="0.0" size="5">
+          <input type="text" id="animationStyleCustomZ" value="10.0" size="5"> <br>
+        </form>
+        <button type="button" onclick="reset()">Reset Animation</button>
+      </td>
+    </tr>
+  </table>
 </body>
 
 </html>
