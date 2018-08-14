@@ -191,6 +191,14 @@
         mat3.transpose(normalMatrix);
         gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, normalMatrix);
     }
+
+    // Rotate a 2d vector around (0,0), angle in rads
+    function rotateVec2(vec, angle) {
+        cs = Math.cos(angle);
+        sn = Math.sin(angle);
+        
+        return [vec[0]*cs - vec[1]*sn, vec[0]*sn + vec[1]*cs];
+    }
     // End matrix helper code
 
     // Code that handles camera rotation via mouse drag.
@@ -256,7 +264,8 @@
     var cameraDistance = -80.0;
     var gridSize = 30;
     var gridScale = 1.05;
-    var tileColour = [1.0, 1.0, 1.0];
+    var tile1Colour = [1.0, 1.0, 1.0];
+    var tile2Colour = [1.0, 1.0, 1.0];
     var animDuration = 3.0;
     var useCenterAnim = false;
     var customRotationPoint = [0.0, 0.0, 0.0];
@@ -288,10 +297,16 @@
         
         gridScale = parseFloat(document.getElementById("gridScale").value);
         
-        tileColour = [
-            parseFloat(document.getElementById("tileColourR").value),
-            parseFloat(document.getElementById("tileColourG").value),
-            parseFloat(document.getElementById("tileColourB").value)
+        tile1Colour = [
+            parseFloat(document.getElementById("tile1ColourR").value),
+            parseFloat(document.getElementById("tile1ColourG").value),
+            parseFloat(document.getElementById("tile1ColourB").value)
+        ];
+        
+        tile2Colour = [
+            parseFloat(document.getElementById("tile2ColourR").value),
+            parseFloat(document.getElementById("tile2ColourG").value),
+            parseFloat(document.getElementById("tile2ColourB").value)
         ];
         
         animDuration = parseFloat(document.getElementById("animDuration").value);
@@ -762,8 +777,8 @@
         this.position = position;
         this.orientation = orientation;
     }
-    function generatePenroseGrid(gridScale){
-        //TODO: actually generate positions (aka the easy part)
+    // Makes a base grid of 5 tiles, it is then expanded several times to produce a bigger grid.
+    function generateBasePenroseGrid(gridScale){
         var tileSpecsList = [
             new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*0,      gridScale*1,      0], 0),
             new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*0.951,  gridScale*0.309,  0], 5.026548),
@@ -771,13 +786,56 @@
             new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*-0.588, gridScale*-0.809, 0], 2.513274),
             new TileSpecs(TILE_TYPES.PENROSE_THICK, [gridScale*-0.951, gridScale*0.309,  0], 1.256637),
             
-            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0.95176,  gridScale*1.30941,  0], 5.6548665 + 1.570796),
-            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*1.54000,  gridScale*-0.50000, 0], 4.3982295 + 1.570796),
-            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0,        gridScale*-1.61882, 0], 3.1415925 + 1.570796),
-            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-1.54000, gridScale*-0.50000, 0], 1.8849555 + 1.570796),
-            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-0.95176, gridScale*1.30941,  0], 0.6283185 + 1.570796),
+//            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0.95176,  gridScale*1.30941,  0], 5.6548665 + 1.570796),
+//            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*1.54000,  gridScale*-0.50000, 0], 4.3982295 + 1.570796),
+//            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*0,        gridScale*-1.61882, 0], 3.1415925 + 1.570796),
+//            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-1.54000, gridScale*-0.50000, 0], 1.8849555 + 1.570796),
+//            new TileSpecs(TILE_TYPES.PENROSE_THIN,  [gridScale*-0.95176, gridScale*1.30941,  0], 0.6283185 + 1.570796),
         ];
         return tileSpecsList;
+    }
+    
+    // Grid expansion works by replacing every tile with multiple smaller tiles thus forming a grid made of more tiles.
+    // The expansion algorithm is based on "Updown generation" algorithm here https://www.ams.org/publicoutreach/feature-column/fcarc-ribbons
+    // This arrays describes how a tile breaks down (x offset, y offset, orientation offset; respectively):
+    var thickTileExpansionPattern = [
+        new TileSpecs(TILE_TYPES.PENROSE_THICK, [-0.3635, 0.5,       0], -0.6283185 + 3.141593),
+//      new TileSpecs(TILE_TYPES.PENROSE_THICK, [0.3635,  0.5,       0], 0.6283185  + 3.141593),
+        new TileSpecs(TILE_TYPES.PENROSE_THIN,  [-0.588,  -0.191,    0], 0.6283185  + 1.570796),
+//      new TileSpecs(TILE_TYPES.PENROSE_THIN,  [0.588,   -0.191,    0], -0.6283185 + 1.570796),
+        new TileSpecs(TILE_TYPES.PENROSE_THICK, [0,       -0.381966, 0], 3.141593),
+    ];
+    var thinTileExpansionPattern = [
+        new TileSpecs(TILE_TYPES.PENROSE_THICK, [0.191,  0.588,  0], 0.3141593),
+//      new TileSpecs(TILE_TYPES.PENROSE_THIN,  [-0.309, 0.224,  0], -0.3141593 - 1.570796),
+        new TileSpecs(TILE_TYPES.PENROSE_THIN,  [-0.309, -0.224, 0], 0.3141593  + 1.570796),
+//      new TileSpecs(TILE_TYPES.PENROSE_THICK, [0.191,  -0.588, 0], -0.3141593 + 3.141593),
+    ];
+    function expandPenroseGrid(tileSpecs, gridScale){
+        var expandedTileSpecsList = [];
+        for (var i in tileSpecs) {
+            if (tileSpecs[i].type == TILE_TYPES.PENROSE_THIN) {
+                for (var j in thinTileExpansionPattern) {
+                    var offset = rotateVec2([thinTileExpansionPattern[j].position[0], thinTileExpansionPattern[j].position[1]], tileSpecs[i].orientation);
+                    expandedTileSpecsList.push(new TileSpecs(thinTileExpansionPattern[j].type, 
+                        [(tileSpecs[i].position[0] + (offset[0] * gridScale)) * 1.61803,
+                         (tileSpecs[i].position[1] + (offset[1] * gridScale)) * 1.61803,
+                         tileSpecs[i].position[2]],
+                        tileSpecs[i].orientation + thinTileExpansionPattern[j].orientation));
+                }
+            } else if (tileSpecs[i].type == TILE_TYPES.PENROSE_THICK) {
+                for (var j in thickTileExpansionPattern) {
+                    var offset = rotateVec2([thickTileExpansionPattern[j].position[0], thickTileExpansionPattern[j].position[1]], tileSpecs[i].orientation);
+                    expandedTileSpecsList.push(new TileSpecs(thickTileExpansionPattern[j].type, 
+                        [(tileSpecs[i].position[0] + (offset[0] * gridScale)) * 1.61803,
+                         (tileSpecs[i].position[1] + (offset[1] * gridScale)) * 1.61803,
+                         tileSpecs[i].position[2]],
+                        tileSpecs[i].orientation + thickTileExpansionPattern[j].orientation));
+                }
+            }
+        }
+        
+        return expandedTileSpecsList;
     }
 
     function initObjects() {
@@ -788,17 +846,25 @@
                 var tile = new RenderableObject();
                 makeHex(tile);
                 tile.position = tilePositions[i];
+                tile.colour = tile1Colour;
                 renderableObjects.push(tile);
             }
         }
         else if (gridType == GRID_TYPES.PENROSE) {
-            var tileSpecs = generatePenroseGrid(gridScale);
+            var tileSpecs = generateBasePenroseGrid(gridScale);
+            var i;
+            for (i = 0; i < gridSize; i++) {
+                tileSpecs = expandPenroseGrid(tileSpecs, gridScale);
+            }
+            
             for (var i in tileSpecs) {
                 var tile = new RenderableObject();
                 if (tileSpecs[i].type == TILE_TYPES.PENROSE_THIN) {
                     makePenroseThinRhomd(tile);
+                    tile.colour = tile2Colour;
                 } else if (tileSpecs[i].type == TILE_TYPES.PENROSE_THICK) {
                     makePenroseThickRhomd(tile);
+                    tile.colour = tile1Colour;
                 }
                 tile.position = tileSpecs[i].position;
                 tile.tileOrientation = tileSpecs[i].orientation;
@@ -855,7 +921,7 @@
                     renderableObjects[i].show = true;
                     
                     // Setup a timeline that will gradually shift the tile from black to white.
-                    timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], tileColour, animDuration*1000));
+                    timelines.push(new InterpolationTimeline(function (value) {this.colour = value}.bind(renderableObjects[i]), [0.0, 0.0, 0.0], renderableObjects[i].colour, animDuration*1000));
                     timelines[timelines.length-1].active = true;
                     
                     // Setup a timeline that will move tiles into place (by rotating them around a point behind them).
@@ -928,13 +994,13 @@
         <form>
           Choose grid type:
           <input type="radio" name="gridType" value="hex" checked>Hexagonal
-          <input type="radio" name="gridType" value="penrose">Penrose<br>
+          <input type="radio" name="gridType" value="penrose" checked>Penrose<br>
           
           Camera distance:
-          <input type="text" id="cameraDistance" value="-80.0" size="5"><br>
+          <input type="text" id="cameraDistance" value="-60.0" size="5"><br>
           
           Grid size:
-          <input type="text" id="gridSize" value="30" size="4"><br>
+          <input type="text" id="gridSize" value="7" size="4"><br>
           
           Distance between tiles:
           <input type="text" id="gridScale" value="1.05" size="4"><br>
@@ -942,10 +1008,15 @@
           Grid expansion rate (per sec):
           <input type="text" id="gridExpansionRate" value="2.0" size="4"><br>
           
-          Tile colour:
-          <input type="text" id="tileColourR" value="1.0" size="3">
-          <input type="text" id="tileColourG" value="1.0" size="3">
-          <input type="text" id="tileColourB" value="1.0" size="3"> <br>
+          Tile 1 colour:
+          <input type="text" id="tile1ColourR" value="1.0" size="3">
+          <input type="text" id="tile1ColourG" value="0.2" size="3">
+          <input type="text" id="tile1ColourB" value="0.2" size="3"> <br>
+          
+          Tile 2 colour:
+          <input type="text" id="tile2ColourR" value="0.2" size="3">
+          <input type="text" id="tile2ColourG" value="0.2" size="3">
+          <input type="text" id="tile2ColourB" value="1.0" size="3"> <br>
           
           Animation duration (sec):
           <input type="text" id="animDuration" value="3.0" size="4"><br>
